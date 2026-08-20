@@ -1,0 +1,124 @@
+name: Claude Issue Triage
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+
+concurrency:
+  group: issue-triage-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    if: >-
+      github.event.sender.type != 'Bot' &&
+      !contains(github.event.issue.labels.*.name, 'triage:skip')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Ensure triage labels exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          create_label() {
+            gh label create "$1" --color "$2" --description "$3" --force
+          }
+          create_label "area:gameplay" "1D76DB" "Lógica de juego: colisiones, rotación, líneas, puntuación, nivel"
+          create_label "area:render"   "1D76DB" "Dibujado en canvas: tablero, ghost piece, preview"
+          create_label "area:input"    "1D76DB" "Manejo de teclado y pausa"
+          create_label "area:ui"       "1D76DB" "HTML/CSS, HUD, overlay de game over"
+          create_label "priority:high"   "B60205" "Prioridad alta"
+          create_label "priority:medium" "FBCA04" "Prioridad media"
+          create_label "priority:low"    "0E8A16" "Prioridad baja"
+          create_label "triage:needs-info" "CCCCCC" "Falta información para poder analizar o reproducir"
+          create_label "triage:skip"       "EEEEEE" "Excluir este issue del triage automático"
+
+      - name: Run Claude Code triage
+        id: claude-triage
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          additional_permissions: |
+            actions: read
+
+          claude_args: |
+            --allowedTools "Read,Grep,Glob,Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh label list:*),Bash(gh search issues:*)"
+            --max-turns 20
+
+          prompt: |
+            REPO: ${{ github.repository }}
+            ISSUE NUMBER: ${{ github.event.issue.number }}
+            EVENTO: ${{ github.event.action }}
+            TÍTULO: ${{ github.event.issue.title }}
+            AUTOR: ${{ github.event.issue.user.login }}
+            CUERPO:
+            ${{ github.event.issue.body }}
+
+            Eres el encargado de hacer triage de issues de este repo (Tetris clásico en JavaScript
+            vanilla, sin build ni dependencias: `index.html`, `style.css`, `game.js`). Tu trabajo es
+            diagnosticar, NO implementar la solución.
+
+            Pasos:
+
+            1. Lee `CLAUDE.md` para entender la arquitectura del proyecto (estado global en
+               `game.js`, `collide` como única fuente de verdad de colisiones, wall kicks en
+               `tryRotate`, recálculo de `dropInterval` en `clearLines`, acoplamiento entre
+               `COLS`/`ROWS`/`BLOCK` y el `<canvas>` de `index.html`).
+            2. Lee `game.js` (y `index.html`/`style.css` si el issue toca UI) con Read/Grep para
+               ubicar con precisión las funciones y líneas relevantes al issue.
+            3. Busca posibles duplicados con `gh search issues --repo ${{ github.repository }}`. Si
+               encuentras uno claro, menciónalo en el diagnóstico.
+            4. Confirma los labels disponibles con `gh label list` y clasifica el issue usando
+               SOLO labels existentes (no crees labels nuevos):
+               - Un label de tipo: `bug`, `enhancement`, `documentation`, `question`, `duplicate`,
+                 `accessibility`, o `invalid` si el reporte no es válido/accionable.
+               - Un label de prioridad: `priority:high`, `priority:medium` o `priority:low`.
+               - Uno o más labels de área: `area:gameplay`, `area:render`, `area:input`, `area:ui`.
+               - `triage:needs-info` si falta información para reproducir o decidir (en ese caso
+                 la prioridad puede omitirse).
+               Aplícalos con `gh issue edit ${{ github.event.issue.number }} --add-label "..."`.
+            5. Publica (o actualiza, ver punto 6) un comentario de diagnóstico en español, en
+               Markdown, con exactamente estas secciones, de forma concisa (~40 líneas):
+
+               <!-- claude-triage -->
+               ## 🔍 Diagnóstico automático
+
+               **Clasificación:** tipo, prioridad, áreas, y por qué.
+
+               **Alcance en el código:** archivos y funciones concretas, con referencias tipo
+               `game.js:línea`.
+
+               **Causa probable / comportamiento actual:** qué hace hoy el código y por qué produce
+               lo reportado (o, si es una feature request, dónde encajaría).
+
+               **Propuesta de implementación:** pasos concretos sobre las funciones nombradas.
+
+               **Riesgos y efectos colaterales:** p. ej. cambios que atraviesan `collide`, o el
+               acoplamiento `COLS`/`ROWS`/`BLOCK` ↔ `index.html`.
+
+               **Criterios de aceptación:** cómo verificar el fix a mano en el navegador.
+
+               **Confianza e información que falta.**
+
+            6. Para publicar el comentario: escribe el cuerpo (incluyendo el marcador
+               `<!-- claude-triage -->` en la primera línea) a un archivo temporal y publícalo con
+               `gh issue comment ${{ github.event.issue.number }} --body-file <archivo>`. Antes de
+               comentar, revisa con `gh issue view ${{ github.event.issue.number }} --comments` si ya
+               existe un comentario tuyo anterior con ese marcador; si existe, actualízalo con
+               `gh issue comment ${{ github.event.issue.number }} --edit-last --body-file <archivo>`
+               en vez de crear uno nuevo.
+
+            Límites: no modifiques archivos del repositorio, no cierres el issue, no abras pull
+            requests.
