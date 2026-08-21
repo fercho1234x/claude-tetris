@@ -13,7 +13,10 @@ const COLORS = [
   '#e57373', // Z - red
   '#7e57c2', // J - purple
   '#ffb74d', // L - orange
+  '#b0bec5', // NUT - gris metálico
 ];
+
+const NUT = 8;
 
 const PIECES = [
   null,
@@ -24,6 +27,7 @@ const PIECES = [
   [[5,5,0],[0,5,5],[0,0,0]],                  // Z
   [[6,0,0],[6,6,6],[0,0,0]],                  // J
   [[0,0,7],[7,7,7],[0,0,0]],                  // L
+  [[8,8,8],[8,0,8],[8,8,8]],                  // Tuerca - hueco central
 ];
 
 const LINE_SCORES = [0, 100, 300, 500, 800];
@@ -48,7 +52,7 @@ function createBoard() {
 }
 
 function randomPiece() {
-  const type = Math.floor(Math.random() * 7) + 1;
+  const type = Math.floor(Math.random() * (PIECES.length - 1)) + 1;
   const shape = PIECES[type].map(row => [...row]);
   return { type, shape, x: Math.floor(COLS / 2) - Math.floor(shape[0].length / 2), y: 0 };
 }
@@ -171,8 +175,42 @@ function drawBlock(context, x, y, colorIndex, size, alpha) {
   context.globalAlpha = 1;
 }
 
+function cssVar(name) {
+  return getComputedStyle(document.body).getPropertyValue(name).trim();
+}
+
+function drawNutHole(context, cx, cy, size, ghost) {
+  const px = (cx + 0.5) * size;
+  const py = (cy + 0.5) * size;
+  const r = size * 0.42;
+  context.globalAlpha = ghost ? 0.2 : 1;
+  if (!ghost) {
+    context.fillStyle = cssVar('--board-bg'); // tapa el grid dentro del agujero
+    context.beginPath();
+    context.arc(px, py, r, 0, Math.PI * 2);
+    context.fill();
+  }
+  context.strokeStyle = 'rgba(0,0,0,0.35)'; // anillo interior de la rosca
+  context.lineWidth = 2;
+  context.beginPath();
+  context.arc(px, py, r, 0, Math.PI * 2);
+  context.stroke();
+  context.globalAlpha = 1;
+}
+
+function isNutHole(r, c) {
+  if (board[r][c]) return false;
+  for (let dr = -1; dr <= 1; dr++)
+    for (let dc = -1; dc <= 1; dc++) {
+      if (dr === 0 && dc === 0) continue;
+      const nr = r + dr, nc = c + dc;
+      if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS || board[nr][nc] !== NUT) return false;
+    }
+  return true;
+}
+
 function drawGrid() {
-  ctx.strokeStyle = getComputedStyle(document.body).getPropertyValue('--grid-color').trim();
+  ctx.strokeStyle = cssVar('--grid-color');
   ctx.lineWidth = 0.5;
   for (let c = 1; c < COLS; c++) {
     ctx.beginPath();
@@ -194,8 +232,10 @@ function draw() {
 
   // board
   for (let r = 0; r < ROWS; r++)
-    for (let c = 0; c < COLS; c++)
+    for (let c = 0; c < COLS; c++) {
       drawBlock(ctx, c, r, board[r][c], BLOCK);
+      if (isNutHole(r, c)) drawNutHole(ctx, c, r, BLOCK, false);
+    }
 
   // ghost
   const gy = ghostY();
@@ -203,11 +243,13 @@ function draw() {
     for (let c = 0; c < current.shape[r].length; c++)
       if (current.shape[r][c])
         drawBlock(ctx, current.x + c, gy + r, current.shape[r][c], BLOCK, 0.2);
+  if (current.type === NUT) drawNutHole(ctx, current.x + 1, gy + 1, BLOCK, true);
 
   // current piece
   for (let r = 0; r < current.shape.length; r++)
     for (let c = 0; c < current.shape[r].length; c++)
       drawBlock(ctx, current.x + c, current.y + r, current.shape[r][c], BLOCK);
+  if (current.type === NUT) drawNutHole(ctx, current.x + 1, current.y + 1, BLOCK, false);
 }
 
 function drawNext() {
@@ -219,6 +261,7 @@ function drawNext() {
   for (let r = 0; r < shape.length; r++)
     for (let c = 0; c < shape[r].length; c++)
       drawBlock(nextCtx, offX + c, offY + r, shape[r][c], NB);
+  if (next.type === NUT) drawNutHole(nextCtx, offX + 1, offY + 1, NB, false);
 }
 
 function endGame() {

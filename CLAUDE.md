@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Qué es esto
 
-Tetris clásico en JavaScript vanilla (sin dependencias, sin framework, sin build). Tres archivos: `index.html`, `style.css`, `game.js`. Todo el juego cabe en `game.js` (~300 líneas).
+Tetris clásico en JavaScript vanilla (sin dependencias, sin framework, sin build). Tres archivos: `index.html`, `style.css`, `game.js`. Todo el juego cabe en `game.js` (~370 líneas).
 
 ## Ejecutar / probar cambios
 
@@ -22,8 +22,9 @@ Todo el estado del juego vive en variables globales de módulo en `game.js` (`bo
 
 Piezas clave a entender antes de tocar la lógica de juego:
 
-- **Tablero**: matriz `ROWS × COLS` (20×10); cada celda es `0` (vacía) o un índice 1–7 que indexa `COLORS`/`PIECES` (el color/tipo de la pieza que la ocupó).
+- **Tablero**: matriz `ROWS × COLS` (20×10); cada celda es `0` (vacía) o un índice 1–8 que indexa `COLORS`/`PIECES` (el color/tipo de la pieza que la ocupó).
 - **Piezas**: matrices cuadradas fijas en `PIECES`. Rotación (`rotateCW`) = transposición, sin tablas de rotación tipo SRS.
+- **Tuerca** (`NUT`, tipo 8): pieza 3×3 (`[[8,8,8],[8,0,8],[8,8,8]]`) con la celda central a `0`. Al fijarse deja un agujero real y permanente en `board` (esa fila nunca se completa salvo que otra pieza rellene el hueco por debajo); al ser simétrica, rotarla es un no-op. Su hueco se dibuja como un círculo (`drawNutHole`); sobre el tablero ya fijado se detecta por patrón de vecinas (`isNutHole`), ya que ahí no queda registro de qué pieza lo originó.
 - **Colisión** (`collide`): única fuente de verdad para saber si una forma cabe en `(ox, oy)`; todo movimiento/rotación/gravedad pasa por aquí.
 - **Wall kicks** (`tryRotate`): tras rotar, prueba desplazamientos `[0, -1, 1, -2, 2]` columnas hasta encontrar uno sin colisión.
 - **Loop de juego** (`loop`, via `requestAnimationFrame`): acumula `dt` y baja la pieza cuando supera `dropInterval`; `dropInterval` se recalcula en `clearLines` según el nivel (`max(100, 1000 - (level-1)*90)`).
