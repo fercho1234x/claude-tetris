@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Qué es esto
 
-Tetris clásico en JavaScript vanilla (sin dependencias, sin framework, sin build). Tres archivos: `index.html`, `style.css`, `game.js`. Todo el juego cabe en `game.js` (~300 líneas).
+Tetris clásico en JavaScript vanilla (sin dependencias, sin framework, sin build). Tres archivos: `index.html`, `style.css`, `game.js`. Todo el juego cabe en `game.js` (~480 líneas).
 
 ## Ejecutar / probar cambios
 
@@ -29,6 +29,9 @@ Piezas clave a entender antes de tocar la lógica de juego:
 - **Loop de juego** (`loop`, via `requestAnimationFrame`): acumula `dt` y baja la pieza cuando supera `dropInterval`; `dropInterval` se recalcula en `clearLines` según el nivel (`max(100, 1000 - (level-1)*90)`).
 - **Fijar pieza** (`lockPiece`): `merge()` la escribe en `board` → `clearLines()` → `spawn()` la siguiente. Si la nueva pieza ya colisiona al aparecer, `endGame()`.
 - **Rendering**: `draw()` redibuja todo el canvas cada frame (grid + tablero + ghost piece con `globalAlpha=0.2` + pieza activa); `drawNext()` dibuja el preview en un canvas aparte.
-- **Input**: un único listener `keydown` en `document` despacha por `e.code`; `P` alterna pausa incluso durante game over check (early return si `gameOver`).
+- **Input**: un único listener `keydown` en `document` despacha por `e.code`; primero comprueba `started` (early return si el jugador aún no pulsó JUGAR), luego `P` alterna pausa, luego early return si `paused`/`gameOver`. El input de nombre (`#name-input`) para records hace `e.stopPropagation()` en su propio `keydown` para no disparar acciones de juego al escribir.
+- **Pantalla de inicio** (`#start-overlay`, visible por defecto al cargar la página): muestra el top 5 de records y las estadísticas históricas (`renderStartScreen`). El botón "JUGAR" (`playBtn`) oculta este overlay y recién ahí llama a `init()` — el loop de juego no arranca antes de eso, controlado por la bandera `started`.
+- **Tabla de records** (`tetris-highscores` en `localStorage`, top 5 por `score` descendente, cada registro `{ name, score, lines, level, combo, date }`): al hacer `endGame()`, `showHighscoreEntry()` decide si la puntuación entra en el top 5 (`qualifiesForHighscore`); si entra, muestra un formulario de nombre (`#highscore-form`) y `saveHighscoreEntry()` persiste el registro y resalta la fila nueva (clase `.new`) al renderizar la tabla vía `renderHighscoreList`. El botón "Resetear records" limpia la clave de `localStorage` y refresca la vista. Todo el acceso a `localStorage` pasa por `try/catch` (JSON corrupto o storage no disponible cae a lista vacía / valores en cero).
+- **Combo y estadísticas** (`tetris-stats` en `localStorage`, `{ bestCombo, maxLines }`): el contador `combo` (variable global) sube en cada `clearLines()` que despeja ≥1 línea y se resetea a `0` en el lock que no despeja ninguna; `comboMax` guarda el máximo de la partida en curso. Al terminar la partida, `updateStats()` compara `comboMax`/`lines` contra los históricos y actualiza `tetris-stats` si se superaron.
 
 Al modificar `COLS`, `ROWS` o `BLOCK` en `game.js`, hay que actualizar también `width`/`height` del `<canvas id="board">` en `index.html` para que coincidan (`COLS × BLOCK`, `ROWS × BLOCK`).
