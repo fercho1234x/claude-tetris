@@ -178,6 +178,43 @@ body {
   transform: translateX(20px);
 }
 
+/* ---- Selector de skin ---- */
+.skin-toggle {
+  flex-direction: row !important;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#skin-select {
+  background: var(--kbd-bg);
+  border: 1px solid var(--kbd-border);
+  color: var(--kbd-color);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* ---- Skins visuales: solo tocan el área del tablero, independiente del tema claro/oscuro ---- */
+body.skin-neon {
+  --board-bg: #000000;
+  --board-border: #00e5ff;
+  --grid-color: #0a2a2e;
+}
+
+body.skin-pastel {
+  --board-bg: #fdf6f0;
+  --board-border: #e3d5e8;
+  --grid-color: #f0e6ec;
+}
+
+body.skin-pixel {
+  --board-bg: #12121a;
+  --board-border: #4a4a55;
+  --grid-color: #2a2a33;
+}
+
 /* ---- Controles ---- */
 .controls ul {
   list-style: none;

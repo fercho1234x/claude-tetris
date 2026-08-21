@@ -44,8 +44,9 @@ const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
 const themeToggle = document.getElementById('theme-toggle');
+const skinSelect = document.getElementById('skin-select');
 
-let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
+let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId, skin;
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -163,26 +164,34 @@ function updateHUD() {
   levelEl.textContent = level;
 }
 
-function drawBlock(context, x, y, colorIndex, size, alpha) {
-  if (!colorIndex) return;
-  const color = COLORS[colorIndex];
-  context.globalAlpha = alpha ?? 1;
-  context.fillStyle = color;
-  context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
-  // highlight
-  context.fillStyle = 'rgba(255,255,255,0.12)';
-  context.fillRect(x * size + 1, y * size + 1, size - 2, 4);
-  context.globalAlpha = 1;
-}
-
 function cssVar(name) {
   return getComputedStyle(document.body).getPropertyValue(name).trim();
 }
 
-function drawNutHole(context, cx, cy, size, ghost) {
+// Dibuja un rectángulo redondeado; usa ctx.roundRect si el runtime lo soporta,
+// si no cae a un path manual con arcTo (mismo resultado visual).
+function roundRectPath(context, x, y, w, h, r) {
+  context.beginPath();
+  if (typeof context.roundRect === 'function') {
+    context.roundRect(x, y, w, h, r);
+    return;
+  }
+  const rr = Math.min(r, w / 2, h / 2);
+  context.moveTo(x + rr, y);
+  context.arcTo(x + w, y, x + w, y + h, rr);
+  context.arcTo(x + w, y + h, x, y + h, rr);
+  context.arcTo(x, y + h, x, y, rr);
+  context.arcTo(x, y, x + w, y, rr);
+  context.closePath();
+}
+
+// Agujero de la Tuerca como anillo circular simple: usado por retro/neon/pastel,
+// que solo difieren en el color/grosor/glow del trazo (ver `ring` en cada skin).
+function drawRingHole(context, cx, cy, size, ghost, ring) {
   const px = (cx + 0.5) * size;
   const py = (cy + 0.5) * size;
-  const r = size * 0.42;
+  const r = size * ring.radiusRatio;
+  context.save();
   context.globalAlpha = ghost ? 0.2 : 1;
   if (!ghost) {
     context.fillStyle = cssVar('--board-bg'); // tapa el grid dentro del agujero
@@ -190,12 +199,149 @@ function drawNutHole(context, cx, cy, size, ghost) {
     context.arc(px, py, r, 0, Math.PI * 2);
     context.fill();
   }
-  context.strokeStyle = 'rgba(0,0,0,0.35)'; // anillo interior de la rosca
-  context.lineWidth = 2;
+  if (ring.glow) {
+    context.shadowColor = ring.glow;
+    context.shadowBlur = ghost ? 4 : 10;
+  }
+  context.strokeStyle = ring.stroke;
+  context.lineWidth = ring.lineWidth;
   context.beginPath();
   context.arc(px, py, r, 0, Math.PI * 2);
   context.stroke();
-  context.globalAlpha = 1;
+  context.restore();
+}
+
+// Cada skin define su paleta de colores y cómo dibuja un bloque / el agujero de la Tuerca.
+const SKINS = {
+  retro: {
+    palette: COLORS,
+    drawBlock(context, x, y, colorIndex, size, alpha) {
+      const color = this.palette[colorIndex];
+      context.save();
+      context.globalAlpha = alpha ?? 1;
+      context.fillStyle = color;
+      context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
+      context.fillStyle = 'rgba(255,255,255,0.12)'; // highlight superior
+      context.fillRect(x * size + 1, y * size + 1, size - 2, 4);
+      context.restore();
+    },
+    drawNutHole(context, cx, cy, size, ghost) {
+      drawRingHole(context, cx, cy, size, ghost, {
+        radiusRatio: 0.42, stroke: 'rgba(0,0,0,0.35)', lineWidth: 2,
+      });
+    },
+  },
+  neon: {
+    palette: [
+      null,
+      '#00e5ff', '#ffea00', '#e040fb', '#00e676',
+      '#ff1744', '#7c4dff', '#ff9100', '#cfd8dc',
+    ],
+    drawBlock(context, x, y, colorIndex, size, alpha) {
+      const color = this.palette[colorIndex];
+      context.save();
+      context.globalAlpha = alpha ?? 1;
+      context.shadowColor = color;
+      context.shadowBlur = (alpha && alpha < 1) ? 4 : 9; // glow moderado: shadowBlur es costoso y se aplica a todo el tablero cada frame
+      context.fillStyle = color;
+      context.fillRect(x * size + 2, y * size + 2, size - 4, size - 4);
+      context.shadowBlur = 0;
+      context.strokeStyle = 'rgba(255,255,255,0.55)';
+      context.lineWidth = 1;
+      context.strokeRect(x * size + 2.5, y * size + 2.5, size - 5, size - 5);
+      context.restore();
+    },
+    drawNutHole(context, cx, cy, size, ghost) {
+      drawRingHole(context, cx, cy, size, ghost, {
+        radiusRatio: 0.42, stroke: 'rgba(255,255,255,0.8)', lineWidth: 2, glow: '#ffffff',
+      });
+    },
+  },
+  pastel: {
+    palette: [
+      null,
+      '#a8dadc', '#fff3b0', '#d8bfd8', '#b5e8b5',
+      '#f7b2ad', '#c3b1e1', '#ffd8a8', '#d6d6e0',
+    ],
+    drawBlock(context, x, y, colorIndex, size, alpha) {
+      const color = this.palette[colorIndex];
+      context.save();
+      context.globalAlpha = alpha ?? 1;
+      context.fillStyle = color;
+      roundRectPath(context, x * size + 2, y * size + 2, size - 4, size - 4, 6);
+      context.fill();
+      context.fillStyle = 'rgba(255,255,255,0.35)'; // highlight suave
+      roundRectPath(context, x * size + 2, y * size + 2, size - 4, (size - 4) * 0.4, 6);
+      context.fill();
+      context.restore();
+    },
+    drawNutHole(context, cx, cy, size, ghost) {
+      drawRingHole(context, cx, cy, size, ghost, {
+        radiusRatio: 0.4, stroke: 'rgba(120,110,140,0.4)', lineWidth: 3,
+      });
+    },
+  },
+  pixel: {
+    palette: COLORS,
+    drawBlock(context, x, y, colorIndex, size, alpha) {
+      const color = this.palette[colorIndex];
+      const bx = x * size + 1, by = y * size + 1, bw = size - 2, bh = size - 2;
+      context.save();
+      context.globalAlpha = alpha ?? 1;
+      context.fillStyle = color;
+      context.fillRect(bx, by, bw, bh);
+      context.beginPath();
+      context.rect(bx, by, bw, bh);
+      context.clip();
+      // rejilla de píxeles pequeños en tablero de ajedrez (dithering)
+      const px = Math.max(2, Math.floor(size / 6));
+      context.fillStyle = 'rgba(0,0,0,0.15)';
+      for (let iy = 0; iy < bh; iy += px * 2)
+        for (let ix = 0; ix < bw; ix += px * 2) {
+          context.fillRect(bx + ix, by + iy, px, px);
+          context.fillRect(bx + ix + px, by + iy + px, px, px);
+        }
+      context.fillStyle = 'rgba(255,255,255,0.18)';
+      context.fillRect(bx, by, bw, px);
+      context.restore();
+    },
+    drawNutHole(context, cx, cy, size, ghost) {
+      const bx = cx * size, by = cy * size;
+      const r = size * 0.36;
+      context.save();
+      context.globalAlpha = ghost ? 0.2 : 1;
+      if (!ghost) {
+        context.fillStyle = cssVar('--board-bg');
+        context.beginPath();
+        context.arc(bx + size / 2, by + size / 2, r, 0, Math.PI * 2);
+        context.fill();
+      }
+      // anillo pixelado: puntos cuadrados en vez de trazo continuo
+      const px = Math.max(2, Math.floor(size / 6));
+      context.fillStyle = 'rgba(0,0,0,0.5)';
+      const steps = 16;
+      for (let i = 0; i < steps; i++) {
+        const angle = (i / steps) * Math.PI * 2;
+        const dx = bx + size / 2 + Math.cos(angle) * r - px / 2;
+        const dy = by + size / 2 + Math.sin(angle) * r - px / 2;
+        context.fillRect(dx, dy, px, px);
+      }
+      context.restore();
+    },
+  },
+};
+
+function currentSkin() {
+  return SKINS[skin] || SKINS.retro;
+}
+
+function drawBlock(context, x, y, colorIndex, size, alpha) {
+  if (!colorIndex) return;
+  currentSkin().drawBlock(context, x, y, colorIndex, size, alpha);
+}
+
+function drawNutHole(context, cx, cy, size, ghost) {
+  currentSkin().drawNutHole(context, cx, cy, size, ghost);
 }
 
 function isNutHole(r, c) {
@@ -363,5 +509,28 @@ function initTheme() {
 
 themeToggle.addEventListener('change', () => applyTheme(themeToggle.checked));
 
+const SKIN_KEY = 'tetris-skin';
+const SKIN_CLASSES = Object.keys(SKINS).map(name => `skin-${name}`);
+
+function applySkin(name) {
+  skin = SKINS[name] ? name : 'retro';
+  document.body.classList.remove(...SKIN_CLASSES);
+  document.body.classList.add(`skin-${skin}`);
+  skinSelect.value = skin;
+  try { localStorage.setItem(SKIN_KEY, skin); } catch { /* storage no disponible: la skin sigue aplicándose en memoria */ }
+  // repinta ya con la nueva skin si el juego está en marcha (board/next existen)
+  if (board) draw();
+  if (next) drawNext();
+}
+
+function initSkin() {
+  let saved = null;
+  try { saved = localStorage.getItem(SKIN_KEY); } catch { /* storage no disponible: usa retro por defecto */ }
+  applySkin(saved || 'retro');
+}
+
+skinSelect.addEventListener('change', () => applySkin(skinSelect.value));
+
 initTheme();
+initSkin();
 init();
